@@ -104,6 +104,55 @@ test("3施設の切り替えは20・10・10地点を表示し施設IDを保存�
   }
 });
 
+test("方向説明は施設とセンサ番号に対応し、未設定のボタンには表示しない", t => {
+  const app = launch(); t.after(app.close);
+  app.window.MuseumLoggerCore.findFacility("kahaku").directionLabels = {
+    1: { A: "ロビー → 展示室", B: "展示室 → ロビー" },
+    2: { A: "入口 → 奥" },
+    3: { A: "  ", B: "" },
+  };
+  app.window.MuseumLoggerCore.findFacility("seimei").directionLabels = {
+    1: { A: "通路 → 展示室" },
+  };
+  app.input("facilitySelect", "kahaku");
+  const firstRow = app.document.querySelector('[data-sensor-row="1"]');
+  assert.deepEqual([...firstRow.querySelectorAll(".direction-description")].map(node => node.textContent),
+    ["ロビー → 展示室", "展示室 → ロビー"]);
+  const descriptionId = firstRow.querySelector("button").getAttribute("aria-describedby");
+  assert.equal(app.document.getElementById(descriptionId)?.textContent, "ロビー → 展示室");
+  assert.equal(app.document.querySelector('[data-sensor-row="2"]').querySelectorAll(".direction-description").length, 1);
+  assert.equal(app.document.querySelector('[data-sensor-row="3"]').querySelectorAll(".direction-description").length, 0);
+  app.input("facilitySelect", "seimei");
+  assert.deepEqual([...app.byId("sensorGrid").querySelectorAll(".direction-description")].map(node => node.textContent),
+    ["通路 → 展示室"]);
+  app.input("facilitySelect", "tohaku");
+  assert.equal(app.byId("sensorGrid").querySelectorAll(".direction-description").length, 0);
+});
+
+test("方向説明中の記号は文字として表示し、記録とCSVはA/Bのまま保持する", async t => {
+  const app = launch(); t.after(app.close);
+  app.prepare(); app.record(12);
+  const before = app.stored().records[0];
+  app.window.MuseumLoggerCore.findFacility("kahaku").directionLabels = {
+    12: { A: '<b>入口</b> → "展示室"', B: "展示室 → 入口" },
+  };
+  app.input("facilitySelect", "kahaku");
+  const description = app.document.querySelector('[data-sensor-row="12"] .direction-description');
+  assert.equal(description?.textContent, '<b>入口</b> → "展示室"');
+  assert.equal(description.childElementCount, 0);
+  app.record(12, "B");
+  assert.deepEqual(app.stored().records[0], before);
+  assert.equal(app.stored().records[1].direction, "B");
+  app.byId("saveCsvButton").click();
+  const csv = await app.readBlob(app.downloads[0]);
+  assert.equal(csv.split("\n")[0].replace(/^\uFEFF/, ""),
+    "record_id,collector,device_name,device_type,timestamp,timestamp_ms,facility,sensor_number,direction");
+  assert.match(csv, /,kahaku,12,A\n/);
+  assert.match(csv, /,kahaku,12,B\n/);
+  assert.doesNotMatch(csv, /入口|展示室/);
+  assert.equal(app.errors.length, 0);
+});
+
 test("CSV保存は2台を2行に展開しMACを出力しない", async t => {
   const app = launch(); t.after(app.close);
   app.prepare(); app.record();

@@ -47,9 +47,9 @@ test("施設設定は正式名称と初期センサ数20/10/10を提供する", 
   assert.deepEqual(
     JSON.parse(JSON.stringify(core.FACILITIES)),
     [
-      { id: "kahaku", name: "国立科学博物館", sensorCount: 20 },
-      { id: "seimei", name: "神奈川県立生命の星・地球博物館", sensorCount: 10 },
-      { id: "tohaku", name: "東京国立博物館", sensorCount: 10 },
+      { id: "kahaku", name: "国立科学博物館", sensorCount: 20, directionLabels: {} },
+      { id: "seimei", name: "神奈川県立生命の星・地球博物館", sensorCount: 10, directionLabels: {} },
+      { id: "tohaku", name: "東京国立博物館", sensorCount: 10, directionLabels: {} },
     ],
   );
 });

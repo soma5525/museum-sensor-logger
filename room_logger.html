@@ -475,6 +475,23 @@
       font-variant-numeric: tabular-nums;
     }
 
+    .direction-option {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      gap: 6px;
+    }
+
+    .direction-description {
+      margin: 0;
+      padding: 0 3px 3px;
+      color: var(--ink);
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+      text-align: center;
+    }
+
     .direction-button {
       min-width: 0;
       min-height: 68px;
@@ -872,6 +889,7 @@
       </div>
       <p id="sensorCount"></p>
     </div>
+    <p class="field-note">A/Bの向きはセンサごとに決め、全員で揃えてください。方向説明がない地点は、実験前に対応表で確認してください。</p>
     <div class="sensor-grid" id="sensorGrid"></div>
   </section>
 
@@ -988,9 +1006,10 @@
   "use strict";
 
   const FACILITIES = [
-    { id: "kahaku", name: "国立科学博物館", sensorCount: 20 },
-    { id: "seimei", name: "神奈川県立生命の星・地球博物館", sensorCount: 10 },
-    { id: "tohaku", name: "東京国立博物館", sensorCount: 10 },
+    // 未確定の向きを仮の地名で埋めると正解データが混乱するため、確認できた地点だけ設定します。
+    { id: "kahaku", name: "国立科学博物館", sensorCount: 20, directionLabels: {} },
+    { id: "seimei", name: "神奈川県立生命の星・地球博物館", sensorCount: 10, directionLabels: {} },
+    { id: "tohaku", name: "東京国立博物館", sensorCount: 10, directionLabels: {} },
   ];
   const CSV_HEADER = [
     "record_id",
@@ -1454,6 +1473,8 @@
       number.append(label, value);
 
       ["A", "B"].forEach((direction) => {
+        const option = document.createElement("div");
+        option.className = "direction-option";
         const button = document.createElement("button");
         button.className = "direction-button direction-button--" + direction.toLowerCase();
         button.type = "button";
@@ -1464,7 +1485,17 @@
           const capturedAt = new Date();
           recordPassage(sensorNumber, direction, capturedAt);
         });
-        row.appendChild(button);
+        option.appendChild(button);
+        const descriptionText = facility.directionLabels?.[sensorNumber]?.[direction];
+        if (typeof descriptionText === "string" && descriptionText.trim()) {
+          const description = document.createElement("p");
+          description.className = "direction-description";
+          description.id = "direction-" + facility.id + "-" + sensorNumber + "-" + direction;
+          description.textContent = descriptionText.trim();
+          button.setAttribute("aria-describedby", description.id);
+          option.appendChild(description);
+        }
+        row.appendChild(option);
       });
 
       row.prepend(number);
