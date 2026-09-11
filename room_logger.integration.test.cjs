@@ -78,6 +78,96 @@ test("削除キャンセルは記録を残し、確定は選んだ1件だけ削�
   assert.equal(app.stored().records[0].sensor_number, 2);
 });
 
+test("施設リセットの確認は1回で、施設名とイベント件数を示しキャンセルなら全件を残す", t => {
+  const app = launch(); t.after(app.close);
+  app.prepare(); app.record(1); app.record(2);
+  app.input("facilitySelect", "seimei"); app.record(3);
+  app.input("facilitySelect", "kahaku");
+  const before = app.window.localStorage.getItem(key);
+  const confirmations = [];
+  app.window.confirm = message => { confirmations.push(message); return false; };
+  assert.ok(app.byId("resetFacilityRecordsButton"), "施設リセットボタンがある");
+  app.byId("resetFacilityRecordsButton").click();
+  assert.equal(confirmations.length, 1);
+  assert.match(confirmations[0], /国立科学博物館/);
+  assert.match(confirmations[0], /2件/);
+  assert.match(confirmations[0], /元に戻せません/);
+  assert.equal(app.window.localStorage.getItem(key), before);
+  assert.equal(app.document.querySelectorAll("#historyList article").length, 3);
+});
+
+test("確定した施設の全記録者の記録だけをリセットし設定と他施設の記録を再起動後も保持する", async t => {
+  const app = launch(); t.after(app.close);
+  app.prepare(); app.record(20);
+  app.input("collectorInput", "別の記録者"); app.record(19);
+  app.input("facilitySelect", "seimei"); app.record(10, "B");
+  app.input("facilitySelect", "kahaku");
+  const before = app.stored();
+  assert.equal(app.byId("decreaseSensorCountButton").disabled, true);
+  let confirmations = 0;
+  app.window.confirm = () => { confirmations++; return true; };
+  assert.ok(app.byId("resetFacilityRecordsButton"));
+  app.byId("resetFacilityRecordsButton").click();
+  assert.equal(confirmations, 1);
+  assert.deepEqual(app.stored(), {...before, records:[before.records[2]]});
+  assert.equal(app.byId("resetFacilityRecordsButton").disabled, true);
+  assert.equal(app.byId("decreaseSensorCountButton").disabled, false);
+  assert.match(app.byId("statusTitle").textContent, /センサ10/);
+  const restored = launch({saved:app.window.localStorage.getItem(key)}); t.after(restored.close);
+  assert.deepEqual(restored.stored(), {...before, records:[before.records[2]]});
+  restored.byId("saveCsvButton").click();
+  const csv = await restored.readBlob(restored.downloads[0]);
+  assert.doesNotMatch(csv, /,kahaku,/);
+  assert.match(csv, /,seimei,10,B/);
+  restored.record(1);
+  assert.equal(restored.stored().records.length, 2);
+});
+
+test("選択施設の記録がゼロならリセットできず、切り替えで対象と件数が更新される", t => {
+  const app = launch(); t.after(app.close);
+  let confirmations = 0;
+  app.window.confirm = () => { confirmations++; return true; };
+  assert.ok(app.byId("resetFacilityRecordsButton"));
+  assert.equal(app.byId("resetFacilityRecordsButton").disabled, true);
+  app.byId("resetFacilityRecordsButton").click();
+  app.prepare(); app.record(1);
+  assert.equal(app.byId("resetFacilityRecordsButton").disabled, false);
+  app.input("facilitySelect", "tohaku");
+  assert.match(app.byId("resetFacilitySummary").textContent, /東京国立博物館.*0件/);
+  assert.equal(app.byId("resetFacilityRecordsButton").disabled, true);
+  app.byId("resetFacilityRecordsButton").click();
+  assert.equal(confirmations, 0);
+  assert.equal(app.stored().records.length, 1);
+});
+
+test("リセットの保存に失敗したら画面と保存先に全記録を残してCSVで回収できる", async t => {
+  const app = launch(); t.after(app.close);
+  app.prepare(); app.record(20);
+  const saved = app.window.localStorage.getItem(key);
+  app.window.Storage.prototype.setItem = () => { throw new Error("quota"); };
+  app.window.confirm = () => true;
+  assert.ok(app.byId("resetFacilityRecordsButton"));
+  app.byId("resetFacilityRecordsButton").click();
+  assert.equal(app.window.localStorage.getItem(key), saved);
+  assert.equal(app.document.querySelectorAll("#historyList article").length, 1);
+  assert.equal(app.byId("storageWarning").hidden, false);
+  assert.match(app.byId("toast").textContent, /削除していません/);
+  assert.equal(app.byId("decreaseSensorCountButton").disabled, true);
+  app.byId("saveCsvButton").click();
+  assert.match(await app.readBlob(app.downloads[0]), /,kahaku,20,A/);
+});
+
+test("壊れた保存データは施設リセットでも削除や上書きをしない", t => {
+  const app = launch({saved:"{broken"}); t.after(app.close);
+  let confirmations = 0;
+  app.window.confirm = () => { confirmations++; return true; };
+  assert.ok(app.byId("resetFacilityRecordsButton"));
+  app.byId("resetFacilityRecordsButton").click();
+  assert.equal(confirmations, 0);
+  assert.equal(app.byId("resetFacilityRecordsButton").disabled, true);
+  assert.equal(app.window.localStorage.getItem(key), "{broken");
+});
+
 test("履歴編集と再起動でID・時刻・MACアドレスを保持する", t => {
   const app = launch(); t.after(app.close);
   app.prepare(); app.record();

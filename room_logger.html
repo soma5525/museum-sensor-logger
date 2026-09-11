@@ -549,6 +549,12 @@
       box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.18);
     }
 
+    .history-reset {
+      margin-bottom: 18px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
     .history-list {
       display: grid;
     }
@@ -936,6 +942,12 @@
       </span>
     </summary>
     <div class="panel__body">
+      <section class="history-reset" aria-labelledby="resetFacilityTitle">
+        <h3 id="resetFacilityTitle">選択中の施設のリセット</h3>
+        <p id="resetFacilitySummary" aria-live="polite"></p>
+        <p class="field-note">この端末の選択中の施設について、全記録者の計測記録だけを削除します。他施設の記録や設定は残ります。元に戻せないため、必要な記録は先にCSVを保存してください。</p>
+        <button class="button button--danger" id="resetFacilityRecordsButton" type="button" aria-describedby="resetFacilitySummary" disabled>この施設の計測記録をリセット</button>
+      </section>
       <div class="history-list" id="historyList"></div>
     </div>
   </details>
@@ -1632,6 +1644,7 @@
 
   function renderHistory() {
     renderSensorCountControls();
+    renderFacilityResetControls();
     const list = selectById("historyList");
     const summary = selectById("historySummary");
     list.replaceChildren();
@@ -1684,6 +1697,39 @@
       row.append(direction, main, actions);
       list.appendChild(row);
     });
+  }
+
+  function renderFacilityResetControls() {
+    const facility = core.findFacility(state.facilityId);
+    const recordCount = state.records.filter((record) => record.facility === facility.id).length;
+    selectById("resetFacilitySummary").textContent = facility.name + "：" + recordCount + "件";
+    selectById("resetFacilityRecordsButton").disabled = storageReadBlocked || recordCount === 0;
+  }
+
+  function resetFacilityRecords() {
+    if (storageReadBlocked) return;
+    const facility = core.findFacility(state.facilityId);
+    const recordCount = state.records.filter((record) => record.facility === facility.id).length;
+    if (recordCount === 0) return;
+    if (!window.confirm(facility.name + "の計測記録" + recordCount + "件（全記録者）を削除します。\n元に戻せません。必要な記録は先にCSVを保存してください。\n他施設の記録・記録者・デバイス・センサ地点数は残ります。\nよろしいですか？")) return;
+
+    const previousRecords = state.records;
+    const hadUnsavedChanges = hasUnsavedChanges;
+    state.records = state.records.filter((record) => record.facility !== facility.id);
+    if (!persistState()) {
+      // 保存できないまま画面だけ空にすると、削除済みと誤認されるため元の記録を残します。
+      state.records = previousRecords;
+      hasUnsavedChanges = hadUnsavedChanges;
+      selectById("storageWarning").textContent = "リセットを保存できませんでした。計測記録はすべて残っています。" +
+        (hadUnsavedChanges ? "未保存の変更があるため、画面を閉じずにCSVを保存してください。" : "");
+      renderHistory();
+      renderRecordingStatus();
+      notify("リセットを保存できなかったため、記録は削除していません");
+      return;
+    }
+    renderHistory();
+    renderRecordingStatus();
+    notify(facility.name + "の計測記録" + recordCount + "件をリセットしました");
   }
 
   function deleteRecord(recordId) {
@@ -1902,6 +1948,7 @@
   }
 
   function bindEvents() {
+    selectById("resetFacilityRecordsButton").addEventListener("click", resetFacilityRecords);
     selectById("increaseSensorCountButton").addEventListener("click", () => resizeSensorList(1));
     selectById("decreaseSensorCountButton").addEventListener("click", () => resizeSensorList(-1));
     selectById("facilitySelect").addEventListener("change", (event) => {
@@ -1909,6 +1956,7 @@
       persistState();
       renderSettingsSummary();
       renderSensorGrid();
+      renderFacilityResetControls();
     });
     selectById("collectorInput").addEventListener("input", (event) => {
       state.collector = event.target.value;

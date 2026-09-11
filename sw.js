@@ -2,7 +2,7 @@
 
 // 内容を更新するときは版番号も上げ、古い画面と新しい資材を混在させません。
 const CACHE_PREFIX = "museum-sensor-shell:" + self.registration.scope + ":";
-const CACHE_NAME = CACHE_PREFIX + "v3";
+const CACHE_NAME = CACHE_PREFIX + "v4";
 const APP_PATHS = [
   "./", "./index.html", "./room_logger.html", "./manifest.json",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png",
