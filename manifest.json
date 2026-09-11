@@ -1,0 +1,17 @@
+{
+  "id": "./",
+  "name": "博物館センサ記録",
+  "short_name": "センサ記録",
+  "description": "博物館のセンサ通過時刻を端末内に記録するアプリ",
+  "lang": "ja",
+  "start_url": "./room_logger.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#edf1ef",
+  "theme_color": "#173f35",
+  "icons": [
+    {"src":"./icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
+    {"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},
+    {"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}
+  ]
+}

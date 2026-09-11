@@ -1,0 +1,1861 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#173f35">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="センサ記録">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <title>博物館センサ記録</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #edf1ef;
+      --surface: #ffffff;
+      --surface-soft: #f7f9f8;
+      --ink: #17211d;
+      --muted: #617069;
+      --line: #cbd5d0;
+      --museum: #173f35;
+      --museum-soft: #dce9e4;
+      --direction-a: #2557d6;
+      --direction-a-dark: #1e45aa;
+      --direction-b: #b96b00;
+      --direction-b-dark: #8f5300;
+      --success: #13795b;
+      --danger: #b42318;
+      --danger-soft: #fce8e6;
+      --focus: #0b77e3;
+      --radius: 14px;
+      --shadow: 0 10px 28px rgba(23, 63, 53, 0.09);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    [hidden] { display: none !important; }
+    .storage-warning {
+      border: 2px solid var(--danger);
+      border-radius: 10px;
+      padding: 12px;
+      background: var(--danger-soft);
+      color: var(--danger);
+      font-weight: 700;
+    }
+
+    html {
+      background: var(--museum);
+    }
+
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      min-height: 100dvh;
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: "Avenir Next", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button,
+    select {
+      touch-action: manipulation;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    summary:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--focus) 65%, white);
+      outline-offset: 2px;
+    }
+
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      padding: calc(env(safe-area-inset-top) + 10px) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left));
+      background: var(--museum);
+      color: white;
+      box-shadow: 0 2px 0 rgba(255, 255, 255, 0.12);
+    }
+
+    .app-header__inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      width: min(100%, 880px);
+      margin: 0 auto;
+    }
+
+    .app-title {
+      min-width: 0;
+    }
+
+    .app-title h1 {
+      margin: 0;
+      font-size: clamp(17px, 4.6vw, 22px);
+      line-height: 1.2;
+      letter-spacing: 0.01em;
+    }
+
+    .app-title p {
+      margin: 3px 0 0;
+      color: rgba(255, 255, 255, 0.73);
+      font-size: 11px;
+    }
+
+    .clock {
+      flex: 0 0 auto;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .app-shell {
+      display: grid;
+      gap: 14px;
+      width: min(100%, 880px);
+      margin: 0 auto;
+      padding: 14px max(12px, env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    }
+
+    .panel {
+      overflow: clip;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .panel summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 54px;
+      padding: 12px 15px;
+      cursor: pointer;
+      list-style: none;
+      font-weight: 700;
+      user-select: none;
+    }
+
+    .panel summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .panel summary::after {
+      content: "＋";
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 19px;
+      font-weight: 500;
+    }
+
+    .panel[open] summary::after {
+      content: "−";
+    }
+
+    .summary-heading {
+      min-width: 0;
+    }
+
+    .summary-heading small {
+      display: block;
+      overflow: hidden;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .panel__body {
+      padding: 2px 15px 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .settings-grid {
+      display: grid;
+      gap: 14px;
+      padding-top: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      margin: 0;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .field input,
+    .field select {
+      width: 100%;
+      min-height: 48px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface-soft);
+      color: var(--ink);
+      padding: 10px 12px;
+      font-size: 16px;
+    }
+
+    .field-note,
+    .section-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .setting-section {
+      display: grid;
+      gap: 9px;
+    }
+
+    .setting-section__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .setting-section h3 {
+      margin: 0;
+      font-size: 13px;
+    }
+
+    .device-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .device-empty {
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      padding: 14px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .device-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      min-height: 52px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface-soft);
+      padding: 5px 6px 5px 11px;
+    }
+
+    .device-choice {
+      display: grid;
+      grid-template-columns: 22px minmax(0, 1fr);
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+      cursor: pointer;
+    }
+
+    .device-choice input {
+      width: 21px;
+      height: 21px;
+      margin: 0;
+      accent-color: var(--museum);
+    }
+
+    .device-name {
+      display: block;
+      overflow: hidden;
+      font-size: 14px;
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .device-meta {
+      display: block;
+      overflow: hidden;
+      margin-top: 1px;
+      color: var(--muted);
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .button {
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface-soft);
+      color: var(--ink);
+      padding: 9px 13px;
+      font-weight: 700;
+    }
+
+    .button:active {
+      transform: scale(0.98);
+    }
+
+    .button--small {
+      min-height: 38px;
+      padding: 7px 11px;
+      font-size: 12px;
+    }
+
+    .button--primary {
+      border-color: var(--museum);
+      background: var(--museum);
+      color: white;
+    }
+
+    .button--danger {
+      border-color: var(--danger-soft);
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .record-status {
+      position: sticky;
+      top: calc(env(safe-area-inset-top) + 65px);
+      z-index: 15;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      min-height: 62px;
+      border: 1px solid color-mix(in srgb, var(--museum) 28%, var(--line));
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.95);
+      padding: 9px 13px;
+      box-shadow: 0 7px 20px rgba(23, 63, 53, 0.13);
+      backdrop-filter: blur(14px);
+    }
+
+    .status-mark {
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--museum-soft);
+      color: var(--museum);
+      font-size: 18px;
+      font-weight: 900;
+    }
+
+    .record-status.is-ready .status-mark,
+    .record-status.has-record .status-mark {
+      background: var(--success);
+      color: white;
+    }
+
+    .status-copy {
+      min-width: 0;
+    }
+
+    .status-copy strong,
+    .status-copy small {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .status-copy strong {
+      font-size: 14px;
+    }
+
+    .status-copy small {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .status-time {
+      color: var(--museum);
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+    }
+
+    .sensor-section {
+      display: grid;
+      gap: 8px;
+    }
+
+    .section-heading {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 2px 3px;
+    }
+
+    .section-heading h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .section-heading p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .sensor-grid {
+      display: grid;
+      gap: 7px;
+      overflow: clip;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 7px;
+      box-shadow: var(--shadow);
+    }
+
+    .sensor-row {
+      display: grid;
+      grid-template-columns: 58px minmax(0, 1fr) minmax(0, 1fr);
+      align-items: stretch;
+      gap: 7px;
+      min-width: 0;
+      border-radius: 11px;
+      background: var(--surface-soft);
+      padding: 7px;
+    }
+
+    .sensor-row.is-flashing {
+      animation: sensor-confirm 0.46s ease-out;
+    }
+
+    .sensor-number {
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      color: var(--muted);
+      line-height: 1;
+    }
+
+    .sensor-number small {
+      margin-bottom: 5px;
+      font-size: 9px;
+    }
+
+    .sensor-number strong {
+      color: var(--ink);
+      font-size: 24px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .direction-button {
+      min-width: 0;
+      min-height: 68px;
+      border: 0;
+      border-radius: 11px;
+      color: white;
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+      box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.18);
+    }
+
+    .direction-button--a {
+      background: var(--direction-a);
+    }
+
+    .direction-button--b {
+      background: var(--direction-b);
+    }
+
+    .direction-button--a:active {
+      background: var(--direction-a-dark);
+    }
+
+    .direction-button--b:active {
+      background: var(--direction-b-dark);
+    }
+
+    .direction-button:active {
+      transform: translateY(2px);
+      box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+    }
+
+    .history-list {
+      display: grid;
+    }
+
+    .history-empty {
+      padding: 22px 6px 8px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .history-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      min-height: 64px;
+      border-bottom: 1px solid var(--line);
+      padding: 8px 0;
+    }
+
+    .history-row:last-child {
+      border-bottom: 0;
+    }
+
+    .history-direction {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      color: white;
+      font-size: 18px;
+      font-weight: 900;
+    }
+
+    .history-direction--a {
+      background: var(--direction-a);
+    }
+
+    .history-direction--b {
+      background: var(--direction-b);
+    }
+
+    .history-main {
+      min-width: 0;
+    }
+
+    .history-main strong,
+    .history-main small {
+      display: block;
+    }
+
+    .history-main strong {
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .history-main small {
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .history-time {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .history-actions {
+      display: flex;
+      gap: 5px;
+    }
+
+    .icon-button {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--surface-soft);
+      color: var(--ink);
+      padding: 0;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .icon-button--danger {
+      color: var(--danger);
+    }
+
+    .export-copy {
+      margin: 13px 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .export-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .footer-note {
+      margin: -2px 0 0;
+      color: var(--muted);
+      text-align: center;
+      font-size: 11px;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: none;
+      align-items: end;
+      justify-content: center;
+      background: rgba(9, 24, 19, 0.58);
+      padding: 18px max(12px, env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    }
+
+    .modal-backdrop.is-visible {
+      display: flex;
+    }
+
+    .modal {
+      width: min(100%, 520px);
+      max-height: min(88vh, 720px);
+      overflow-y: auto;
+      border-radius: 18px;
+      background: var(--surface);
+      padding: 19px;
+      box-shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .modal h2 {
+      margin: 0 0 15px;
+      font-size: 20px;
+    }
+
+    .modal-fields {
+      display: grid;
+      gap: 13px;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .modal-actions .button--danger {
+      margin-right: auto;
+    }
+
+    .readonly-value {
+      min-height: 46px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--canvas);
+      padding: 10px 12px;
+      color: var(--muted);
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-weight: 600;
+    }
+
+    .direction-picker {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .direction-choice {
+      position: relative;
+    }
+
+    .direction-choice input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .direction-choice span {
+      display: grid;
+      place-items: center;
+      min-height: 54px;
+      border: 2px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface-soft);
+      font-size: 20px;
+      font-weight: 900;
+    }
+
+    .direction-choice input:checked + span {
+      border-color: var(--museum);
+      background: var(--museum-soft);
+      color: var(--museum);
+    }
+
+    .direction-choice input:focus-visible + span {
+      outline: 3px solid color-mix(in srgb, var(--focus) 65%, white);
+      outline-offset: 2px;
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: calc(18px + env(safe-area-inset-bottom));
+      z-index: 80;
+      max-width: min(90vw, 520px);
+      border-radius: 999px;
+      background: var(--ink);
+      color: white;
+      padding: 10px 16px;
+      opacity: 0;
+      pointer-events: none;
+      text-align: center;
+      transform: translate(-50%, 18px);
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
+
+    .toast.is-visible {
+      opacity: 0.96;
+      transform: translate(-50%, 0);
+    }
+
+    @keyframes sensor-confirm {
+      0% { background: color-mix(in srgb, var(--success) 32%, white); }
+      100% { background: var(--surface-soft); }
+    }
+
+    @media (min-width: 680px) {
+      .settings-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .setting-section--devices {
+        grid-column: 1 / -1;
+      }
+
+      .sensor-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .modal-backdrop {
+        align-items: center;
+      }
+    }
+
+    @media (max-width: 420px) {
+      .app-title p {
+        display: none;
+      }
+
+      .record-status {
+        grid-template-columns: auto minmax(0, 1fr);
+      }
+
+      .status-time {
+        grid-column: 2;
+        margin-top: -7px;
+      }
+
+      .sensor-row {
+        grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr);
+      }
+
+      .history-row {
+        gap: 7px;
+      }
+
+      .history-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .icon-button {
+        width: 36px;
+        height: 36px;
+        font-size: 11px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+<header class="app-header">
+  <div class="app-header__inner">
+    <div class="app-title">
+      <h1>博物館センサ記録</h1>
+      <p>通過時刻を端末内に保存</p>
+    </div>
+    <time class="clock" id="clock" aria-label="現在時刻">--:--:--</time>
+  </div>
+</header>
+
+<main class="app-shell">
+  <p class="storage-warning" id="storageWarning" role="alert" hidden></p>
+  <details class="panel" id="settingsPanel" open>
+    <summary>
+      <span class="summary-heading">
+        記録設定
+        <small id="settingsSummary">施設・記録者・使用デバイスを設定</small>
+      </span>
+    </summary>
+    <div class="panel__body">
+      <div class="settings-grid">
+        <label class="field">
+          施設
+          <select id="facilitySelect"></select>
+        </label>
+
+        <label class="field">
+          記録者
+          <input id="collectorInput" type="text" placeholder="例：平尾" autocomplete="name">
+        </label>
+
+        <section class="setting-section setting-section--devices" aria-labelledby="deviceSectionTitle">
+          <div class="setting-section__head">
+            <div>
+              <h3 id="deviceSectionTitle">使用デバイス</h3>
+              <p class="section-note">複数選択できます</p>
+            </div>
+            <button class="button button--small" id="addDeviceButton" type="button">＋ 追加</button>
+          </div>
+          <div class="device-list" id="deviceList"></div>
+          <p class="field-note">選択内容は次に記録するイベントへ反映されます。過去の記録は変わりません。</p>
+        </section>
+      </div>
+    </div>
+  </details>
+
+  <section class="record-status" id="recordStatus" aria-live="polite">
+    <span class="status-mark" id="statusMark">•</span>
+    <span class="status-copy">
+      <strong id="statusTitle">記録設定を完了してください</strong>
+      <small id="statusDetail">記録者と使用デバイスが必要です</small>
+    </span>
+    <time class="status-time" id="statusTime">--:--:--</time>
+  </section>
+
+  <section class="sensor-section" aria-labelledby="sensorSectionTitle">
+    <div class="section-heading">
+      <div>
+        <h2 id="sensorSectionTitle">センサ</h2>
+        <p id="facilityHeading"></p>
+      </div>
+      <p id="sensorCount"></p>
+    </div>
+    <div class="sensor-grid" id="sensorGrid"></div>
+  </section>
+
+  <details class="panel" id="historyPanel">
+    <summary>
+      <span class="summary-heading">
+        記録履歴
+        <small id="historySummary">まだ記録がありません</small>
+      </span>
+    </summary>
+    <div class="panel__body">
+      <div class="history-list" id="historyList"></div>
+    </div>
+  </details>
+
+  <details class="panel" id="exportPanel">
+    <summary>
+      <span class="summary-heading">
+        CSVを書き出す
+        <small>1デバイス1行・同一イベントはrecord_idで連結</small>
+      </span>
+    </summary>
+    <div class="panel__body">
+      <p class="export-copy">このブラウザの全施設・全記録者の記録を出力します。実験後にCSVを共有または保存してください。端末の日時を自動設定にし、同じブラウザ・同じURLで使用してください。</p>
+      <div class="export-actions">
+        <button class="button button--primary" id="shareCsvButton" type="button">CSVを共有</button>
+        <button class="button" id="saveCsvButton" type="button">CSVを保存</button>
+      </div>
+    </div>
+  </details>
+
+  <details class="panel">
+    <summary>スマホに追加・オフライン利用</summary>
+    <div class="panel__body">
+      <p class="export-copy">iPhone：Safariの共有メニュー →「ホーム画面に追加」。Android：Chromeのメニュー →「アプリをインストール」または「ホーム画面に追加」。</p>
+      <p class="export-copy">追加したアイコンから通信できる状態で一度開き、「オフライン準備完了」を確認してください。その後は通信できない場所でも起動・記録できます。</p>
+      <p class="export-copy">記録は端末・ブラウザごとに保存されます。ブラウザやホーム画面アプリ、URLを切り替える前にCSVを保存してください。実験中は同じ起動方法を使い、実験後に必ずCSVを回収してください。</p>
+    </div>
+  </details>
+  <p class="footer-note" id="offlineStatus" role="status">オフライン準備を確認中</p>
+  <p class="footer-note">サーバ送信なし・端末内保存｜museum sensor logger v1</p>
+</main>
+
+<div class="modal-backdrop" id="deviceModal" role="dialog" aria-modal="true" aria-labelledby="deviceModalTitle" aria-hidden="true">
+  <form class="modal" id="deviceForm">
+    <h2 id="deviceModalTitle">デバイスを追加</h2>
+    <div class="modal-fields">
+      <label class="field">
+        デバイス名
+        <input id="deviceNameInput" type="text" placeholder="例：DaichiのiPhone / beacon-21" autocomplete="off" required>
+      </label>
+      <label class="field">
+        種類
+        <select id="deviceTypeSelect">
+          <option value="smartphone">スマートフォン</option>
+          <option value="beacon">ビーコン</option>
+        </select>
+      </label>
+      <label class="field" id="deviceAddressField" hidden>
+        MACアドレス（任意）
+        <input id="deviceAddressInput" type="text" placeholder="例：1c:34:f1:ad:13:b5" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <span class="field-note">端末内には保持しますが、CSVにはデバイス名を出力します。</span>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="button button--danger" id="deleteDeviceButton" type="button" hidden>削除</button>
+      <button class="button" id="cancelDeviceButton" type="button">キャンセル</button>
+      <button class="button button--primary" type="submit">保存</button>
+    </div>
+  </form>
+</div>
+
+<div class="modal-backdrop" id="recordModal" role="dialog" aria-modal="true" aria-labelledby="recordModalTitle" aria-hidden="true">
+  <form class="modal" id="recordForm">
+    <h2 id="recordModalTitle">記録を編集</h2>
+    <div class="modal-fields">
+      <label class="field">
+        施設
+        <span class="readonly-value" id="recordFacilityValue"></span>
+      </label>
+      <label class="field">
+        記録時刻（変更不可）
+        <time class="readonly-value" id="recordTimestampValue"></time>
+      </label>
+      <label class="field">
+        センサ番号
+        <select id="recordSensorSelect"></select>
+      </label>
+      <fieldset class="field" style="border:0; padding:0">
+        <legend>方向</legend>
+        <span class="direction-picker">
+          <label class="direction-choice">
+            <input type="radio" name="recordDirection" value="A">
+            <span>A</span>
+          </label>
+          <label class="direction-choice">
+            <input type="radio" name="recordDirection" value="B">
+            <span>B</span>
+          </label>
+        </span>
+      </fieldset>
+    </div>
+    <div class="modal-actions">
+      <button class="button" id="cancelRecordButton" type="button">キャンセル</button>
+      <button class="button button--primary" type="submit">変更を保存</button>
+    </div>
+  </form>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script id="museumLoggerCore">
+(function exposeMuseumLoggerCore(root) {
+  "use strict";
+
+  const FACILITIES = [
+    { id: "kahaku", name: "国立科学博物館", sensorCount: 20 },
+    { id: "seimei", name: "神奈川県立生命の星・地球博物館", sensorCount: 10 },
+    { id: "tohaku", name: "東京国立博物館", sensorCount: 10 },
+  ];
+  const CSV_HEADER = [
+    "record_id",
+    "collector",
+    "device_name",
+    "device_type",
+    "timestamp",
+    "timestamp_ms",
+    "facility",
+    "sensor_number",
+    "direction",
+  ];
+
+  function padNumber(value) {
+    return String(value).padStart(2, "0");
+  }
+
+  function formatLocalTimestamp(date) {
+    const offsetMinutes = -date.getTimezoneOffset();
+    const offsetSign = offsetMinutes >= 0 ? "+" : "-";
+    const absoluteOffset = Math.abs(offsetMinutes);
+    const offsetHours = padNumber(Math.floor(absoluteOffset / 60));
+    const offsetRemainingMinutes = padNumber(absoluteOffset % 60);
+
+    return [
+      date.getFullYear(),
+      "-",
+      padNumber(date.getMonth() + 1),
+      "-",
+      padNumber(date.getDate()),
+      "T",
+      padNumber(date.getHours()),
+      ":",
+      padNumber(date.getMinutes()),
+      ":",
+      padNumber(date.getSeconds()),
+      offsetSign,
+      offsetHours,
+      ":",
+      offsetRemainingMinutes,
+    ].join("");
+  }
+
+  function findFacility(facilityId) {
+    return FACILITIES.find((facility) => facility.id === facilityId);
+  }
+
+  function validatePassage(settings, sensorNumber, direction) {
+    const facility = findFacility(settings.facilityId);
+    if (!facility) throw new Error("施設を選択してください");
+    if (!String(settings.collector || "").trim()) {
+      throw new Error("記録者を入力してください");
+    }
+    if (!Array.isArray(settings.devices) || settings.devices.length === 0) {
+      throw new Error("使用デバイスを1台以上選択してください");
+    }
+    if (!Number.isInteger(sensorNumber) || sensorNumber < 1 || sensorNumber > facility.sensorCount) {
+      throw new Error("センサ番号が施設の設定範囲外です");
+    }
+    if (direction !== "A" && direction !== "B") {
+      throw new Error("方向はAまたはBを指定してください");
+    }
+    return facility;
+  }
+
+  function createRecordId() {
+    if (root.crypto && typeof root.crypto.randomUUID === "function") {
+      return root.crypto.randomUUID();
+    }
+    return "r-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+  }
+
+  function snapshotDevices(devices) {
+    return devices.map((device) => ({
+      name: String(device.name || "").trim(),
+      type: device.type === "beacon" ? "beacon" : "smartphone",
+      address: String(device.address || "").trim(),
+    }));
+  }
+
+  function createPassageRecord(settings, sensorNumber, direction, capturedAt, composeRecordId) {
+    validatePassage(settings, sensorNumber, direction);
+    const createId = composeRecordId || createRecordId;
+    return {
+      record_id: createId(),
+      collector: String(settings.collector).trim(),
+      facility: settings.facilityId,
+      sensor_number: sensorNumber,
+      direction,
+      timestamp: formatLocalTimestamp(capturedAt),
+      timestamp_ms: capturedAt.getTime(),
+      devices: snapshotDevices(settings.devices),
+    };
+  }
+
+  function revisePassageRecord(record, revision) {
+    validatePassage(
+      {
+        facilityId: record.facility,
+        collector: record.collector,
+        devices: record.devices,
+      },
+      revision.sensorNumber,
+      revision.direction,
+    );
+    return {
+      ...record,
+      sensor_number: revision.sensorNumber,
+      direction: revision.direction,
+    };
+  }
+
+  function escapeCsvCell(value) {
+    const cell = String(value == null ? "" : value);
+    return /[,"\n\r]/.test(cell) ? '"' + cell.replace(/"/g, '""') + '"' : cell;
+  }
+
+  function recordsToCsv(records) {
+    const lines = [CSV_HEADER.join(",")];
+    records.forEach((record) => {
+      record.devices.forEach((device) => {
+        lines.push([
+          record.record_id,
+          record.collector,
+          device.name,
+          device.type,
+          record.timestamp,
+          record.timestamp_ms,
+          record.facility,
+          record.sensor_number,
+          record.direction,
+        ].map(escapeCsvCell).join(","));
+      });
+    });
+    return "\uFEFF" + lines.join("\n") + "\n";
+  }
+
+  root.MuseumLoggerCore = Object.freeze({
+    FACILITIES,
+    createPassageRecord,
+    findFacility,
+    formatLocalTimestamp,
+    recordsToCsv,
+    revisePassageRecord,
+  });
+})(window);
+</script>
+<script>
+(function startMuseumLogger() {
+  "use strict";
+
+  const core = window.MuseumLoggerCore;
+  const STORAGE_KEY = "museum_sensor_ground_truth_v1";
+  const DEVICE_LABELS = {
+    smartphone: "スマートフォン",
+    beacon: "ビーコン",
+  };
+  let toastTimer = null;
+  let editingDeviceId = null;
+  let editingRecordId = null;
+  let storageReadBlocked = false;
+  let hasUnsavedChanges = false;
+
+  function selectById(id) {
+    return document.getElementById(id);
+  }
+
+  function createDefaultState() {
+    return {
+      facilityId: "kahaku",
+      collector: "",
+      devices: [],
+      selectedDeviceIds: [],
+      records: [],
+    };
+  }
+
+  function normalizeDevice(device) {
+    if (!device || typeof device !== "object") return null;
+    const name = String(device.name || "").trim();
+    if (!name) return null;
+    return {
+      id: String(device.id || composeEntityId("device")),
+      name,
+      type: device.type === "beacon" ? "beacon" : "smartphone",
+      address: String(device.address || "").trim(),
+    };
+  }
+
+  function normalizeRecord(record) {
+    if (!record || typeof record !== "object") return null;
+    const facility = core.findFacility(record.facility);
+    const sensorNumber = Number(record.sensor_number);
+    const devices = Array.isArray(record.devices)
+      ? record.devices.map(normalizeDevice).filter(Boolean).map((device) => ({
+          name: device.name,
+          type: device.type,
+          address: device.address,
+        }))
+      : [];
+
+    if (
+      !facility ||
+      !Number.isInteger(sensorNumber) ||
+      sensorNumber < 1 ||
+      (record.direction !== "A" && record.direction !== "B") ||
+      !String(record.collector || "").trim() ||
+      !Number.isFinite(Number(record.timestamp_ms)) ||
+      !String(record.timestamp || "") ||
+      devices.length === 0
+    ) {
+      return null;
+    }
+
+    return {
+      record_id: String(record.record_id || composeEntityId("record")),
+      collector: String(record.collector).trim(),
+      facility: facility.id,
+      sensor_number: sensorNumber,
+      direction: record.direction,
+      timestamp: String(record.timestamp),
+      timestamp_ms: Number(record.timestamp_ms),
+      devices,
+    };
+  }
+
+  function loadSavedState() {
+    const defaultState = createDefaultState();
+    try {
+      const storedState = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      if (!storedState || typeof storedState !== "object") return defaultState;
+      if (!Array.isArray(storedState.records)) throw new Error("記録配列を読み込めません");
+      const records = storedState.records.map(normalizeRecord);
+      // 読めない行を捨てて保存し直すと正解データが失われるため、全体の上書きを止めます。
+      if (records.some((record) => record === null)) throw new Error("読めない記録があります");
+
+      const devices = Array.isArray(storedState.devices)
+        ? storedState.devices.map(normalizeDevice).filter(Boolean)
+        : [];
+      const deviceIds = new Set(devices.map((device) => device.id));
+      const facilityId = core.findFacility(storedState.facilityId)
+        ? storedState.facilityId
+        : defaultState.facilityId;
+
+      return {
+        facilityId,
+        collector: String(storedState.collector || ""),
+        devices,
+        selectedDeviceIds: Array.isArray(storedState.selectedDeviceIds)
+          ? storedState.selectedDeviceIds.map(String).filter((id) => deviceIds.has(id))
+          : [],
+        records,
+      };
+    } catch (error) {
+      console.warn("保存データを読み込めませんでした", error);
+      storageReadBlocked = true;
+      return defaultState;
+    }
+  }
+
+  let state = loadSavedState();
+
+  function notify(message) {
+    const toast = selectById("toast");
+    toast.textContent = message;
+    toast.classList.add("is-visible");
+    if (toastTimer) window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => toast.classList.remove("is-visible"), 2100);
+  }
+
+  function persistState() {
+    if (storageReadBlocked) {
+      notify("保存データを読み込めないため、上書きを停止しています");
+      return false;
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      hasUnsavedChanges = false;
+      selectById("storageWarning").hidden = true;
+      return true;
+    } catch (error) {
+      console.error("端末内へ保存できませんでした", error);
+      hasUnsavedChanges = true;
+      selectById("storageWarning").hidden = false;
+      selectById("storageWarning").textContent = "未保存の変更があります。この画面を閉じずにCSVを保存してください。";
+      notify("端末内に保存できません。CSVを早めに保存してください");
+      return false;
+    }
+  }
+
+  function composeEntityId(prefix) {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return prefix + "-" + window.crypto.randomUUID();
+    }
+    return prefix + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 9);
+  }
+
+  function listSelectedDevices() {
+    const selectedIds = new Set(state.selectedDeviceIds);
+    return state.devices.filter((device) => selectedIds.has(device.id));
+  }
+
+  function isRecordingReady() {
+    return Boolean(state.collector.trim() && listSelectedDevices().length);
+  }
+
+  function formatClock(date) {
+    return [date.getHours(), date.getMinutes(), date.getSeconds()]
+      .map((part) => String(part).padStart(2, "0"))
+      .join(":");
+  }
+
+  function formatRecordTime(timestamp) {
+    return timestamp.length >= 19 ? timestamp.slice(11, 19) : timestamp;
+  }
+
+  function formatRecordDate(timestamp) {
+    return timestamp.length >= 10 ? timestamp.slice(0, 10) : "";
+  }
+
+  function renderClock() {
+    const now = new Date();
+    selectById("clock").textContent = formatClock(now);
+  }
+
+  function renderFacilityOptions() {
+    const select = selectById("facilitySelect");
+    select.replaceChildren();
+    core.FACILITIES.forEach((facility) => {
+      const option = document.createElement("option");
+      option.value = facility.id;
+      option.textContent = facility.name;
+      select.appendChild(option);
+    });
+  }
+
+  function renderSettingsSummary() {
+    const facility = core.findFacility(state.facilityId);
+    const collector = state.collector.trim() || "記録者未設定";
+    const deviceCount = listSelectedDevices().length;
+    selectById("settingsSummary").textContent =
+      facility.name + " / " + collector + " / " + deviceCount + "台選択";
+  }
+
+  function renderDevices() {
+    const list = selectById("deviceList");
+    list.replaceChildren();
+
+    if (state.devices.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "device-empty";
+      empty.textContent = "デバイスを追加すると、ここで使用中の端末を選べます";
+      list.appendChild(empty);
+      return;
+    }
+
+    state.devices.forEach((device) => {
+      const row = document.createElement("div");
+      row.className = "device-row";
+
+      const choice = document.createElement("label");
+      choice.className = "device-choice";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = state.selectedDeviceIds.includes(device.id);
+      checkbox.setAttribute("aria-label", device.name + "を使用デバイスに設定");
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          state.selectedDeviceIds = [...new Set([...state.selectedDeviceIds, device.id])];
+        } else {
+          state.selectedDeviceIds = state.selectedDeviceIds.filter((id) => id !== device.id);
+        }
+        persistState();
+        renderSettingsSummary();
+        renderRecordingStatus();
+      });
+
+      const copy = document.createElement("span");
+      const name = document.createElement("span");
+      name.className = "device-name";
+      name.textContent = device.name;
+      const meta = document.createElement("span");
+      meta.className = "device-meta";
+      meta.textContent = DEVICE_LABELS[device.type] +
+        (device.type === "beacon" && device.address ? " / " + device.address : "");
+      copy.append(name, meta);
+      choice.append(checkbox, copy);
+
+      const editButton = document.createElement("button");
+      editButton.className = "button button--small";
+      editButton.type = "button";
+      editButton.textContent = "編集";
+      editButton.setAttribute("aria-label", device.name + "を編集");
+      editButton.addEventListener("click", () => openDeviceModal(device.id));
+
+      row.append(choice, editButton);
+      list.appendChild(row);
+    });
+  }
+
+  function renderRecordingStatus() {
+    const status = selectById("recordStatus");
+    const mark = selectById("statusMark");
+    const title = selectById("statusTitle");
+    const detail = selectById("statusDetail");
+    const time = selectById("statusTime");
+    const latestRecord = state.records.at(-1);
+    const selectedDevices = listSelectedDevices();
+    const collector = state.collector.trim();
+
+    status.classList.remove("is-ready", "has-record");
+    if (latestRecord && isRecordingReady()) {
+      status.classList.add("has-record");
+      mark.textContent = "✓";
+      title.textContent = (hasUnsavedChanges ? "未保存：" : "直前：") + "センサ" + latestRecord.sensor_number + "  " + latestRecord.direction;
+      detail.textContent = core.findFacility(latestRecord.facility).name + " / " + latestRecord.collector;
+      time.textContent = formatRecordTime(latestRecord.timestamp);
+      return;
+    }
+
+    if (isRecordingReady()) {
+      status.classList.add("is-ready");
+      mark.textContent = "✓";
+      title.textContent = "記録できます";
+      detail.textContent = collector + " / " + selectedDevices.map((device) => device.name).join("・");
+      time.textContent = "--:--:--";
+      return;
+    }
+
+    mark.textContent = "•";
+    title.textContent = "記録設定を完了してください";
+    if (!collector && selectedDevices.length === 0) {
+      detail.textContent = "記録者と使用デバイスが必要です";
+    } else if (!collector) {
+      detail.textContent = "記録者を入力してください";
+    } else {
+      detail.textContent = "使用デバイスを1台以上選択してください";
+    }
+    time.textContent = "--:--:--";
+  }
+
+  function renderSensorGrid() {
+    const facility = core.findFacility(state.facilityId);
+    const grid = selectById("sensorGrid");
+    grid.replaceChildren();
+    selectById("facilityHeading").textContent = facility.name;
+    selectById("sensorCount").textContent = facility.sensorCount + "地点";
+
+    for (let sensorNumber = 1; sensorNumber <= facility.sensorCount; sensorNumber += 1) {
+      const row = document.createElement("div");
+      row.className = "sensor-row";
+      row.dataset.sensorRow = String(sensorNumber);
+
+      const number = document.createElement("span");
+      number.className = "sensor-number";
+      const label = document.createElement("small");
+      label.textContent = "センサ";
+      const value = document.createElement("strong");
+      value.textContent = String(sensorNumber);
+      number.append(label, value);
+
+      ["A", "B"].forEach((direction) => {
+        const button = document.createElement("button");
+        button.className = "direction-button direction-button--" + direction.toLowerCase();
+        button.type = "button";
+        button.textContent = direction;
+        button.setAttribute("aria-label", "センサ" + sensorNumber + "・方向" + direction + "を記録");
+        // pointerdownではスクロール開始でも記録されるため、確定したclickの冒頭で時刻を取ります。
+        button.addEventListener("click", () => {
+          const capturedAt = new Date();
+          recordPassage(sensorNumber, direction, capturedAt);
+        });
+        row.appendChild(button);
+      });
+
+      row.prepend(number);
+      grid.appendChild(row);
+    }
+  }
+
+  function recordPassage(sensorNumber, direction, capturedAt) {
+    if (storageReadBlocked) {
+      notify("保存データを読み込めないため記録を停止しています");
+      return;
+    }
+    try {
+      const record = core.createPassageRecord(
+        {
+          facilityId: state.facilityId,
+          collector: state.collector,
+          devices: listSelectedDevices(),
+        },
+        sensorNumber,
+        direction,
+        capturedAt,
+      );
+      state.records.push(record);
+      const wasPersisted = persistState();
+      if (navigator.vibrate) {
+        try { navigator.vibrate(22); } catch (error) { console.debug(error); }
+      }
+      renderSettingsSummary();
+      renderRecordingStatus();
+      renderHistory();
+      flashSensorRow(sensorNumber);
+      if (wasPersisted) notify("✓ センサ" + sensorNumber + "・" + direction + "  " + formatRecordTime(record.timestamp));
+    } catch (error) {
+      selectById("settingsPanel").open = true;
+      notify(error.message);
+    }
+  }
+
+  function flashSensorRow(sensorNumber) {
+    const row = document.querySelector('[data-sensor-row="' + sensorNumber + '"]');
+    if (!row) return;
+    row.classList.remove("is-flashing");
+    window.requestAnimationFrame(() => row.classList.add("is-flashing"));
+    window.setTimeout(() => row.classList.remove("is-flashing"), 520);
+  }
+
+  function renderHistory() {
+    const list = selectById("historyList");
+    const summary = selectById("historySummary");
+    list.replaceChildren();
+
+    if (state.records.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "history-empty";
+      empty.textContent = "A/Bボタンを押すと、ここに記録が表示されます";
+      list.appendChild(empty);
+      summary.textContent = "まだ記録がありません";
+      return;
+    }
+
+    const latestRecord = state.records.at(-1);
+    summary.textContent = state.records.length + "件・最新 " + formatRecordTime(latestRecord.timestamp);
+
+    state.records.slice().reverse().forEach((record) => {
+      const row = document.createElement("article");
+      row.className = "history-row";
+
+      const direction = document.createElement("span");
+      direction.className = "history-direction history-direction--" + record.direction.toLowerCase();
+      direction.textContent = record.direction;
+
+      const main = document.createElement("span");
+      main.className = "history-main";
+      const heading = document.createElement("strong");
+      heading.textContent = "センサ" + record.sensor_number + "　" + record.devices.map((device) => device.name).join("・");
+      const meta = document.createElement("small");
+      meta.textContent = formatRecordDate(record.timestamp) + " " + formatRecordTime(record.timestamp) +
+        " / " + core.findFacility(record.facility).name + " / " + record.collector;
+      main.append(heading, meta);
+
+      const actions = document.createElement("span");
+      actions.className = "history-actions";
+      const editButton = document.createElement("button");
+      editButton.className = "icon-button";
+      editButton.type = "button";
+      editButton.textContent = "編集";
+      editButton.setAttribute("aria-label", "センサ" + record.sensor_number + "の記録を編集");
+      editButton.addEventListener("click", () => openRecordModal(record.record_id));
+      const deleteButton = document.createElement("button");
+      deleteButton.className = "icon-button icon-button--danger";
+      deleteButton.type = "button";
+      deleteButton.textContent = "削除";
+      deleteButton.setAttribute("aria-label", "センサ" + record.sensor_number + "の記録を削除");
+      deleteButton.addEventListener("click", () => deleteRecord(record.record_id));
+      actions.append(editButton, deleteButton);
+
+      row.append(direction, main, actions);
+      list.appendChild(row);
+    });
+  }
+
+  function deleteRecord(recordId) {
+    const record = state.records.find((candidate) => candidate.record_id === recordId);
+    if (!record) return;
+    if (!window.confirm("センサ" + record.sensor_number + "・" + record.direction + " の記録を削除しますか？")) return;
+
+    state.records = state.records.filter((candidate) => candidate.record_id !== recordId);
+    persistState();
+    renderHistory();
+    renderRecordingStatus();
+    if (!hasUnsavedChanges) notify("記録を削除しました");
+  }
+
+  function openRecordModal(recordId) {
+    const record = state.records.find((candidate) => candidate.record_id === recordId);
+    if (!record) return;
+    editingRecordId = recordId;
+    const facility = core.findFacility(record.facility);
+    selectById("recordFacilityValue").textContent = facility.name;
+    selectById("recordTimestampValue").textContent = record.timestamp;
+
+    const sensorSelect = selectById("recordSensorSelect");
+    sensorSelect.replaceChildren();
+    for (let sensorNumber = 1; sensorNumber <= facility.sensorCount; sensorNumber += 1) {
+      const option = document.createElement("option");
+      option.value = String(sensorNumber);
+      option.textContent = "センサ " + sensorNumber;
+      option.selected = sensorNumber === record.sensor_number;
+      sensorSelect.appendChild(option);
+    }
+    document.querySelectorAll('input[name="recordDirection"]').forEach((input) => {
+      input.checked = input.value === record.direction;
+    });
+    showModal("recordModal", "recordSensorSelect");
+  }
+
+  function saveRecordRevision() {
+    const recordIndex = state.records.findIndex((record) => record.record_id === editingRecordId);
+    if (recordIndex < 0) return;
+    const directionInput = document.querySelector('input[name="recordDirection"]:checked');
+    if (!directionInput) {
+      notify("方向を選択してください");
+      return;
+    }
+
+    try {
+      state.records[recordIndex] = core.revisePassageRecord(state.records[recordIndex], {
+        sensorNumber: Number(selectById("recordSensorSelect").value),
+        direction: directionInput.value,
+      });
+      persistState();
+      hideModal("recordModal");
+      renderHistory();
+      renderRecordingStatus();
+      if (!hasUnsavedChanges) notify("センサ番号と方向を変更しました");
+    } catch (error) {
+      notify(error.message);
+    }
+  }
+
+  function openDeviceModal(deviceId) {
+    editingDeviceId = deviceId || null;
+    const device = state.devices.find((candidate) => candidate.id === editingDeviceId);
+    selectById("deviceModalTitle").textContent = device ? "デバイスを編集" : "デバイスを追加";
+    selectById("deviceNameInput").value = device ? device.name : "";
+    selectById("deviceTypeSelect").value = device ? device.type : "smartphone";
+    selectById("deviceAddressInput").value = device ? device.address : "";
+    selectById("deleteDeviceButton").hidden = !device;
+    renderDeviceAddressField();
+    showModal("deviceModal", "deviceNameInput");
+  }
+
+  function renderDeviceAddressField() {
+    const isBeacon = selectById("deviceTypeSelect").value === "beacon";
+    selectById("deviceAddressField").hidden = !isBeacon;
+  }
+
+  function saveDevice() {
+    const name = selectById("deviceNameInput").value.trim();
+    const type = selectById("deviceTypeSelect").value === "beacon" ? "beacon" : "smartphone";
+    const address = type === "beacon" ? selectById("deviceAddressInput").value.trim() : "";
+    if (!name) {
+      notify("デバイス名を入力してください");
+      return;
+    }
+
+    const duplicate = state.devices.find((device) =>
+      device.id !== editingDeviceId && device.name.toLocaleLowerCase() === name.toLocaleLowerCase(),
+    );
+    if (duplicate) {
+      notify("同じデバイス名が登録されています");
+      return;
+    }
+
+    if (editingDeviceId) {
+      const deviceIndex = state.devices.findIndex((device) => device.id === editingDeviceId);
+      if (deviceIndex >= 0) {
+        state.devices[deviceIndex] = { ...state.devices[deviceIndex], name, type, address };
+      }
+      notify("デバイスを変更しました");
+    } else {
+      const device = { id: composeEntityId("device"), name, type, address };
+      state.devices.push(device);
+      state.selectedDeviceIds.push(device.id);
+      notify("デバイスを追加して選択しました");
+    }
+
+    persistState();
+    hideModal("deviceModal");
+    renderDevices();
+    renderSettingsSummary();
+    renderRecordingStatus();
+  }
+
+  function deleteDevice() {
+    const device = state.devices.find((candidate) => candidate.id === editingDeviceId);
+    if (!device) return;
+    if (!window.confirm("「" + device.name + "」を削除しますか？\n過去の記録に保存済みの情報は残ります。")) return;
+
+    state.devices = state.devices.filter((candidate) => candidate.id !== device.id);
+    state.selectedDeviceIds = state.selectedDeviceIds.filter((id) => id !== device.id);
+    persistState();
+    hideModal("deviceModal");
+    renderDevices();
+    renderSettingsSummary();
+    renderRecordingStatus();
+    notify("デバイスを削除しました");
+  }
+
+  function showModal(modalId, focusId) {
+    const modal = selectById(modalId);
+    modal.classList.add("is-visible");
+    modal.setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+    window.setTimeout(() => selectById(focusId).focus(), 0);
+  }
+
+  function hideModal(modalId) {
+    const modal = selectById(modalId);
+    modal.classList.remove("is-visible");
+    modal.setAttribute("aria-hidden", "true");
+    document.body.style.overflow = "";
+    if (modalId === "deviceModal") editingDeviceId = null;
+    if (modalId === "recordModal") editingRecordId = null;
+  }
+
+  function csvFilename() {
+    const now = new Date();
+    const date = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+      .map((part, index) => index === 0 ? String(part) : String(part).padStart(2, "0"))
+      .join("-");
+    const collector = state.collector.trim().replace(/[\\/:*?"<>|\s]+/g, "_") || "noname";
+    return "museum_sensor_log_" + date + "_" + collector + ".csv";
+  }
+
+  function saveBlob(filename, content) {
+    const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    window.setTimeout(() => {
+      link.remove();
+      URL.revokeObjectURL(url);
+    }, 250);
+  }
+
+  function recordsExist() {
+    if (state.records.length > 0) return true;
+    notify("書き出す記録がありません");
+    return false;
+  }
+
+  function saveCsv() {
+    if (!recordsExist()) return;
+    saveBlob(csvFilename(), core.recordsToCsv(state.records));
+    notify("CSVの保存を開始しました");
+  }
+
+  async function shareCsv() {
+    if (!recordsExist()) return;
+    const filename = csvFilename();
+    const csv = core.recordsToCsv(state.records);
+    try {
+      const file = new File([csv], filename, { type: "text/csv;charset=utf-8" });
+      const canShareFile = navigator.share && navigator.canShare && navigator.canShare({ files: [file] });
+      if (!canShareFile) {
+        saveBlob(filename, csv);
+        notify("共有機能がないためCSVの保存を開始しました");
+        return;
+      }
+      await navigator.share({
+        files: [file],
+        title: "博物館センサ記録",
+        text: state.records.length + "件の正解データ",
+      });
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        saveBlob(filename, csv);
+        notify("共有できなかったためCSVの保存を開始しました");
+      }
+    }
+  }
+
+  function renderAll() {
+    selectById("facilitySelect").value = state.facilityId;
+    selectById("collectorInput").value = state.collector;
+    renderDevices();
+    renderSettingsSummary();
+    renderRecordingStatus();
+    renderSensorGrid();
+    renderHistory();
+  }
+
+  function bindEvents() {
+    selectById("facilitySelect").addEventListener("change", (event) => {
+      state.facilityId = event.target.value;
+      persistState();
+      renderSettingsSummary();
+      renderSensorGrid();
+    });
+    selectById("collectorInput").addEventListener("input", (event) => {
+      state.collector = event.target.value;
+      persistState();
+      renderSettingsSummary();
+      renderRecordingStatus();
+    });
+    selectById("collectorInput").addEventListener("change", persistState);
+    selectById("addDeviceButton").addEventListener("click", () => openDeviceModal(null));
+    selectById("deviceTypeSelect").addEventListener("change", renderDeviceAddressField);
+    selectById("deviceForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      saveDevice();
+    });
+    selectById("cancelDeviceButton").addEventListener("click", () => hideModal("deviceModal"));
+    selectById("deleteDeviceButton").addEventListener("click", deleteDevice);
+    selectById("recordForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      saveRecordRevision();
+    });
+    selectById("cancelRecordButton").addEventListener("click", () => hideModal("recordModal"));
+    selectById("shareCsvButton").addEventListener("click", shareCsv);
+    selectById("saveCsvButton").addEventListener("click", saveCsv);
+
+    ["deviceModal", "recordModal"].forEach((modalId) => {
+      selectById(modalId).addEventListener("click", (event) => {
+        if (event.target.id === modalId) hideModal(modalId);
+      });
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      if (selectById("deviceModal").classList.contains("is-visible")) hideModal("deviceModal");
+      if (selectById("recordModal").classList.contains("is-visible")) hideModal("recordModal");
+    });
+  }
+
+  renderFacilityOptions();
+  bindEvents();
+  renderAll();
+  if (storageReadBlocked) {
+    selectById("storageWarning").hidden = false;
+    selectById("storageWarning").textContent = "保存データを読み込めません。元データを保護するため記録・保存を停止しています。ブラウザの保存許可を確認してください。";
+  }
+  renderClock();
+  window.setInterval(renderClock, 1000);
+})();
+</script>
+<script id="offlineSetup">
+(function prepareOfflineApp() {
+  const status = document.getElementById("offlineStatus");
+  if (!/^https?:$/.test(location.protocol) || !window.isSecureContext || !("serviceWorker" in navigator)) {
+    status.textContent = "オフライン起動の準備にはHTTPSの公開URLを開いてください";
+    return;
+  }
+  let isReady = false;
+  function renderOfflineStatus() {
+    status.textContent = isReady
+      ? (navigator.onLine ? "オフライン準備完了" : "オフラインで利用中・記録は端末内に保存")
+      : "オフライン準備中・通信できる状態でお待ちください";
+  }
+  renderOfflineStatus();
+  window.addEventListener("online", renderOfflineStatus);
+  window.addEventListener("offline", renderOfflineStatus);
+  navigator.serviceWorker.register("./sw.js", { scope: "./", updateViaCache: "none" })
+    .then(() => navigator.serviceWorker.ready)
+    .then(() => { isReady = true; renderOfflineStatus(); })
+    .catch(() => { status.textContent = "オフライン準備に失敗しました。通信できる状態で開き直してください"; });
+})();
+</script>
+</body>
+</html>
