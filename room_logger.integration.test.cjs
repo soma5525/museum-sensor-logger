@@ -146,7 +146,7 @@ test("方向説明中の記号は文字として表示し、記録とCSVはA/B�
   app.byId("saveCsvButton").click();
   const csv = await app.readBlob(app.downloads[0]);
   assert.equal(csv.split("\n")[0].replace(/^\uFEFF/, ""),
-    "record_id,collector,device_name,device_type,timestamp,timestamp_ms,facility,sensor_number,direction");
+    "record_id,collector,device_name,device_type,timestamp,facility,sensor_number,direction");
   assert.match(csv, /,kahaku,12,A\n/);
   assert.match(csv, /,kahaku,12,B\n/);
   assert.doesNotMatch(csv, /入口|展示室/);
@@ -226,4 +226,99 @@ test("読めない記録が混ざっていてもその行を破棄して上書�
   app.prepare(); app.record();
   assert.equal(app.window.localStorage.getItem(key), saved);
   assert.equal(app.byId("storageWarning").hidden, false);
+});
+
+test("センサ数を施設別に増減でき、追加地点の記録・編集と再起動後の保持ができる", t => {
+  const app = launch(); t.after(app.close);
+  app.prepare();
+  assert.ok(app.byId("increaseSensorCountButton"), "センサ追加ボタンがある");
+  app.byId("increaseSensorCountButton").click();
+  assert.equal(app.byId("sensorGrid").children.length, 21);
+  app.record(21, "B");
+  assert.equal(app.stored().records[0].sensor_number, 21);
+  app.document.querySelector('[aria-label="センサ21の記録を編集"]').click();
+  assert.equal(app.byId("recordSensorSelect").options.length, 21);
+  app.submit("recordForm");
+  assert.equal(app.stored().records[0].direction, "B");
+  app.input("facilitySelect", "seimei");
+  app.byId("decreaseSensorCountButton").click();
+  assert.equal(app.byId("sensorGrid").children.length, 9);
+  app.input("facilitySelect", "tohaku");
+  assert.equal(app.byId("sensorGrid").children.length, 10);
+  const restored = launch({saved:app.window.localStorage.getItem(key)}); t.after(restored.close);
+  restored.input("facilitySelect", "kahaku");
+  assert.equal(restored.byId("sensorGrid").children.length, 21);
+  assert.equal(restored.stored().records[0].sensor_number, 21);
+  restored.input("facilitySelect", "seimei");
+  assert.equal(restored.byId("sensorGrid").children.length, 9);
+  assert.equal(restored.errors.length, 0);
+});
+
+test("減らせるのは記録済みの最大番号までで、記録編集と削除後も下限を更新する", t => {
+  const app = launch(); t.after(app.close);
+  app.prepare(); app.record(12); app.record(8);
+  const before = app.stored().records;
+  assert.ok(app.byId("decreaseSensorCountButton"), "センサ削減ボタンがある");
+  for (let count = 0; count < 10; count++) app.byId("decreaseSensorCountButton").click();
+  assert.equal(app.byId("sensorGrid").children.length, 12);
+  assert.equal(app.byId("decreaseSensorCountButton").disabled, true);
+  assert.deepEqual(app.stored().records, before);
+  app.document.querySelector('[aria-label="センサ12の記録を編集"]').click();
+  app.input("recordSensorSelect", "10"); app.submit("recordForm");
+  assert.equal(app.byId("decreaseSensorCountButton").disabled, false);
+  app.byId("decreaseSensorCountButton").click(); app.byId("decreaseSensorCountButton").click();
+  assert.equal(app.byId("sensorGrid").children.length, 10);
+  assert.equal(app.byId("decreaseSensorCountButton").disabled, true);
+  app.window.confirm = () => true;
+  app.document.querySelector('[aria-label="センサ10の記録を削除"]').click();
+  app.byId("decreaseSensorCountButton").click(); app.byId("decreaseSensorCountButton").click();
+  assert.equal(app.byId("sensorGrid").children.length, 8);
+  assert.equal(app.byId("decreaseSensorCountButton").disabled, true);
+});
+
+test("記録がない施設でも1地点より少なくはできず別端末の初期設定を変えない", t => {
+  const app = launch(); t.after(app.close);
+  assert.ok(app.byId("decreaseSensorCountButton"));
+  for (let count = 0; count < 25; count++) app.byId("decreaseSensorCountButton").click();
+  assert.equal(app.byId("sensorGrid").children.length, 1);
+  assert.equal(app.byId("decreaseSensorCountButton").disabled, true);
+  const other = launch(); t.after(other.close);
+  assert.equal(other.byId("sensorGrid").children.length, 20);
+});
+
+test("センサ設定の保存失敗を表示し、壊れた既存データは増減操作でも上書きしない", t => {
+  const app = launch(); t.after(app.close);
+  assert.ok(app.byId("increaseSensorCountButton"));
+  app.window.Storage.prototype.setItem = () => {throw new Error("quota");};
+  app.byId("increaseSensorCountButton").click();
+  assert.equal(app.byId("storageWarning").hidden, false);
+  assert.equal(app.byId("sensorGrid").children.length, 21);
+  const broken = launch({saved:"{broken"}); t.after(broken.close);
+  broken.byId("increaseSensorCountButton").click();
+  broken.byId("decreaseSensorCountButton").click();
+  assert.equal(broken.byId("sensorGrid").children.length, 20);
+  assert.equal(broken.window.localStorage.getItem(key), "{broken");
+});
+
+test("旧記録のミリ秒を1列のCSVへ引き継ぎ、保存済み番号に必要なセンサ数を復元する", async t => {
+  const oldRecord = {
+    record_id:"legacy", collector:"検証者", facility:"kahaku", sensor_number:22, direction:"A",
+    timestamp:"2026-09-11T12:43:27+09:00", timestamp_ms:1789098207123,
+    devices:[{name:"old-phone",type:"smartphone",address:""}],
+  };
+  for (const sensorCounts of [undefined, {kahaku:2,seimei:-1,tohaku:"invalid"}]) {
+    const app = launch({saved:JSON.stringify({facilityId:"kahaku",collector:"検証者",devices:[],
+      selectedDeviceIds:[],records:[oldRecord],sensorCounts})}); t.after(app.close);
+    assert.equal(app.byId("sensorGrid").children.length, 22);
+    app.document.querySelector('[aria-label="センサ22の記録を編集"]').click();
+    assert.equal(app.byId("recordTimestampValue").textContent, "2026-09-11T12:43:27.123+09:00");
+    app.submit("recordForm");
+    assert.equal(app.stored().records[0].timestamp_ms, 1789098207123);
+    app.byId("saveCsvButton").click();
+    const csv = await app.readBlob(app.downloads[0]);
+    assert.equal(csv.split("\n")[1], "legacy,検証者,old-phone,smartphone,2026-09-11T12:43:27.123+09:00,kahaku,22,A");
+    assert.doesNotMatch(csv.split("\n")[0], /timestamp_ms/);
+    app.input("facilitySelect", "seimei");
+    assert.equal(app.byId("sensorGrid").children.length, 10);
+  }
 });

@@ -475,6 +475,30 @@
       font-variant-numeric: tabular-nums;
     }
 
+    .sensor-count-settings {
+      grid-column: 1 / -1;
+    }
+
+    .sensor-count-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .sensor-count-controls button {
+      min-width: 48px;
+      min-height: 48px;
+      font-size: 22px;
+    }
+
+    .sensor-count-controls output {
+      min-width: 6ch;
+      font-weight: 800;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
     .direction-option {
       display: flex;
       flex-direction: column;
@@ -857,6 +881,17 @@
           <input id="collectorInput" type="text" placeholder="例：平尾" autocomplete="name">
         </label>
 
+        <section class="setting-section sensor-count-settings" aria-labelledby="sensorCountTitle">
+          <h3 id="sensorCountTitle">センサ地点数</h3>
+          <div class="sensor-count-controls">
+            <button class="button" id="decreaseSensorCountButton" type="button" aria-label="センサを1地点減らす" aria-describedby="sensorCountLimit">−</button>
+            <output id="configuredSensorCount" aria-live="polite"></output>
+            <button class="button" id="increaseSensorCountButton" type="button" aria-label="センサを1地点追加する">＋</button>
+          </div>
+          <p class="field-note" id="sensorCountLimit"></p>
+          <p class="field-note">選択中の施設・この端末だけに保存します。他の端末には自動共有されません。全員で同じ番号・設置場所に揃えてください。</p>
+        </section>
+
         <section class="setting-section setting-section--devices" aria-labelledby="deviceSectionTitle">
           <div class="setting-section__head">
             <div>
@@ -913,7 +948,7 @@
       </span>
     </summary>
     <div class="panel__body">
-      <p class="export-copy">このブラウザの全施設・全記録者の記録を出力します。実験後にCSVを共有または保存してください。端末の日時を自動設定にし、同じブラウザ・同じURLで使用してください。</p>
+      <p class="export-copy">このブラウザの全施設・全記録者の記録を出力します。時刻はミリ秒付きのtimestamp 1列です（例：2026-09-11T12:43:27.123+09:00）。端末の時計に依存するため、ミリ秒精度を保証するものではありません。実験後にCSVを共有または保存してください。端末の日時を自動設定にし、同じブラウザ・同じURLで使用してください。</p>
       <div class="export-actions">
         <button class="button button--primary" id="shareCsvButton" type="button">CSVを共有</button>
         <button class="button" id="saveCsvButton" type="button">CSVを保存</button>
@@ -1017,7 +1052,6 @@
     "device_name",
     "device_type",
     "timestamp",
-    "timestamp_ms",
     "facility",
     "sensor_number",
     "direction",
@@ -1046,6 +1080,8 @@
       padNumber(date.getMinutes()),
       ":",
       padNumber(date.getSeconds()),
+      ".",
+      String(date.getMilliseconds()).padStart(3, "0"),
       offsetSign,
       offsetHours,
       ":",
@@ -1057,6 +1093,20 @@
     return FACILITIES.find((facility) => facility.id === facilityId);
   }
 
+  function minimumSensorCount(records, facilityId) {
+    return records.reduce((minimum, record) =>
+      record.facility === facilityId ? Math.max(minimum, record.sensor_number) : minimum, 1);
+  }
+
+  function formatPassageTimestamp(record) {
+    // 過去データのタイムゾーンを現在の端末設定で置き換えないため、元の表記にミリ秒だけ補います。
+    const timestamp = String(record.timestamp);
+    const secondsOnly = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(Z|[+-]\d{2}:\d{2})$/;
+    const milliseconds = ((Number(record.timestamp_ms) % 1000) + 1000) % 1000;
+    return timestamp.replace(secondsOnly, (_, seconds, zone) =>
+      seconds + "." + String(milliseconds).padStart(3, "0") + zone);
+  }
+
   function validatePassage(settings, sensorNumber, direction) {
     const facility = findFacility(settings.facilityId);
     if (!facility) throw new Error("施設を選択してください");
@@ -1066,7 +1116,9 @@
     if (!Array.isArray(settings.devices) || settings.devices.length === 0) {
       throw new Error("使用デバイスを1台以上選択してください");
     }
-    if (!Number.isInteger(sensorNumber) || sensorNumber < 1 || sensorNumber > facility.sensorCount) {
+    const sensorCount = settings.sensorCount ?? facility.sensorCount;
+    if (!Number.isSafeInteger(sensorCount) || sensorCount < 1 ||
+        !Number.isInteger(sensorNumber) || sensorNumber < 1 || sensorNumber > sensorCount) {
       throw new Error("センサ番号が施設の設定範囲外です");
     }
     if (direction !== "A" && direction !== "B") {
@@ -1105,12 +1157,13 @@
     };
   }
 
-  function revisePassageRecord(record, revision) {
+  function revisePassageRecord(record, revision, sensorCount) {
     validatePassage(
       {
         facilityId: record.facility,
         collector: record.collector,
         devices: record.devices,
+        sensorCount,
       },
       revision.sensorNumber,
       revision.direction,
@@ -1136,8 +1189,7 @@
           record.collector,
           device.name,
           device.type,
-          record.timestamp,
-          record.timestamp_ms,
+          formatPassageTimestamp(record),
           record.facility,
           record.sensor_number,
           record.direction,
@@ -1152,6 +1204,8 @@
     createPassageRecord,
     findFacility,
     formatLocalTimestamp,
+    formatPassageTimestamp,
+    minimumSensorCount,
     recordsToCsv,
     revisePassageRecord,
   });
@@ -1183,6 +1237,7 @@
       collector: "",
       devices: [],
       selectedDeviceIds: [],
+      sensorCounts: Object.fromEntries(core.FACILITIES.map((facility) => [facility.id, facility.sensorCount])),
       records: [],
     };
   }
@@ -1230,7 +1285,7 @@
       facility: facility.id,
       sensor_number: sensorNumber,
       direction: record.direction,
-      timestamp: String(record.timestamp),
+      timestamp: core.formatPassageTimestamp(record),
       timestamp_ms: Number(record.timestamp_ms),
       devices,
     };
@@ -1253,9 +1308,16 @@
       const facilityId = core.findFacility(storedState.facilityId)
         ? storedState.facilityId
         : defaultState.facilityId;
+      const sensorCounts = Object.fromEntries(core.FACILITIES.map((facility) => {
+        const savedCount = storedState.sensorCounts?.[facility.id];
+        const configuredCount = Number.isSafeInteger(savedCount) && savedCount >= 1
+          ? savedCount : facility.sensorCount;
+        return [facility.id, Math.max(configuredCount, core.minimumSensorCount(records, facility.id))];
+      }));
 
       return {
         facilityId,
+        sensorCounts,
         collector: String(storedState.collector || ""),
         devices,
         selectedDeviceIds: Array.isArray(storedState.selectedDeviceIds)
@@ -1323,7 +1385,7 @@
   }
 
   function formatRecordTime(timestamp) {
-    return timestamp.length >= 19 ? timestamp.slice(11, 19) : timestamp;
+    return timestamp.length >= 23 ? timestamp.slice(11, 23) : timestamp;
   }
 
   function formatRecordDate(timestamp) {
@@ -1452,14 +1514,38 @@
     time.textContent = "--:--:--";
   }
 
+  function renderSensorCountControls() {
+    const count = state.sensorCounts[state.facilityId];
+    const minimum = core.minimumSensorCount(state.records, state.facilityId);
+    selectById("configuredSensorCount").textContent = count + "地点";
+    selectById("decreaseSensorCountButton").disabled = storageReadBlocked || count <= minimum;
+    selectById("increaseSensorCountButton").disabled = storageReadBlocked;
+    selectById("sensorCountLimit").textContent = minimum > 1
+      ? "記録済みのセンサ" + minimum + "を残すため、" + minimum + "地点より少なくできません。"
+      : "末尾の番号から増減します。最低1地点まで。過去の記録は削除しません。";
+  }
+
+  function resizeSensorList(difference) {
+    if (storageReadBlocked) return;
+    const count = state.sensorCounts[state.facilityId] + difference;
+    if (!Number.isSafeInteger(count) || count < core.minimumSensorCount(state.records, state.facilityId)) return;
+    state.sensorCounts[state.facilityId] = count;
+    const wasPersisted = persistState();
+    renderSensorGrid();
+    renderRecordingStatus();
+    if (wasPersisted) notify(core.findFacility(state.facilityId).name + "：" + count + "地点に変更しました");
+  }
+
   function renderSensorGrid() {
     const facility = core.findFacility(state.facilityId);
+    const sensorCount = state.sensorCounts[state.facilityId];
+    renderSensorCountControls();
     const grid = selectById("sensorGrid");
     grid.replaceChildren();
     selectById("facilityHeading").textContent = facility.name;
-    selectById("sensorCount").textContent = facility.sensorCount + "地点";
+    selectById("sensorCount").textContent = sensorCount + "地点";
 
-    for (let sensorNumber = 1; sensorNumber <= facility.sensorCount; sensorNumber += 1) {
+    for (let sensorNumber = 1; sensorNumber <= sensorCount; sensorNumber += 1) {
       const row = document.createElement("div");
       row.className = "sensor-row";
       row.dataset.sensorRow = String(sensorNumber);
@@ -1512,6 +1598,7 @@
       const record = core.createPassageRecord(
         {
           facilityId: state.facilityId,
+          sensorCount: state.sensorCounts[state.facilityId],
           collector: state.collector,
           devices: listSelectedDevices(),
         },
@@ -1544,6 +1631,7 @@
   }
 
   function renderHistory() {
+    renderSensorCountControls();
     const list = selectById("historyList");
     const summary = selectById("historySummary");
     list.replaceChildren();
@@ -1620,7 +1708,7 @@
 
     const sensorSelect = selectById("recordSensorSelect");
     sensorSelect.replaceChildren();
-    for (let sensorNumber = 1; sensorNumber <= facility.sensorCount; sensorNumber += 1) {
+    for (let sensorNumber = 1; sensorNumber <= state.sensorCounts[record.facility]; sensorNumber += 1) {
       const option = document.createElement("option");
       option.value = String(sensorNumber);
       option.textContent = "センサ " + sensorNumber;
@@ -1646,7 +1734,7 @@
       state.records[recordIndex] = core.revisePassageRecord(state.records[recordIndex], {
         sensorNumber: Number(selectById("recordSensorSelect").value),
         direction: directionInput.value,
-      });
+      }, state.sensorCounts[state.records[recordIndex].facility]);
       persistState();
       hideModal("recordModal");
       renderHistory();
@@ -1814,6 +1902,8 @@
   }
 
   function bindEvents() {
+    selectById("increaseSensorCountButton").addEventListener("click", () => resizeSensorList(1));
+    selectById("decreaseSensorCountButton").addEventListener("click", () => resizeSensorList(-1));
     selectById("facilitySelect").addEventListener("change", (event) => {
       state.facilityId = event.target.value;
       persistState();

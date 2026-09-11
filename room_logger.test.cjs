@@ -71,7 +71,7 @@ test("A/B押下時の設定と時刻を1つの通過イベントへ固定する"
   assert.equal(record.facility, "kahaku");
   assert.equal(record.sensor_number, 12);
   assert.equal(record.direction, "A");
-  assert.equal(record.timestamp, "2026-09-11T12:43:27+09:00");
+  assert.equal(record.timestamp, "2026-09-11T12:43:27.123+09:00");
   assert.equal(record.timestamp_ms, 1789098207123);
   assert.deepEqual(
     JSON.parse(JSON.stringify(record.devices)),
@@ -123,17 +123,34 @@ test("CSVは1デバイス1行へ展開し同じrecord_idでイベントを結ぶ
 
   assert.equal(
     lines[0],
-    "\uFEFFrecord_id,collector,device_name,device_type,timestamp,timestamp_ms,facility,sensor_number,direction",
+    "\uFEFFrecord_id,collector,device_name,device_type,timestamp,facility,sensor_number,direction",
   );
   assert.equal(lines.length, 3);
   assert.equal(
     lines[1],
-    'r-fixed,平尾,"Daichi, ""test"" iPhone",smartphone,2026-09-11T12:43:27+09:00,1789098207123,kahaku,12,A',
+    'r-fixed,平尾,"Daichi, ""test"" iPhone",smartphone,2026-09-11T12:43:27.123+09:00,kahaku,12,A',
   );
   assert.equal(
     lines[2],
-    "r-fixed,平尾,beacon-21,beacon,2026-09-11T12:43:27+09:00,1789098207123,kahaku,12,A",
+    "r-fixed,平尾,beacon-21,beacon,2026-09-11T12:43:27.123+09:00,kahaku,12,A",
   );
+});
+
+test("旧形式の時刻はミリ秒を補ってCSVへ出力し、元のタイムゾーンと記録を変えない", () => {
+  const core = loadMuseumLoggerCore();
+  for (const [timestamp, timestampMs, expected] of [
+    ["2026-09-11T12:43:27+09:00", 1789098207007, "2026-09-11T12:43:27.007+09:00"],
+    ["2026-09-10T20:43:27-07:00", 1789098207000, "2026-09-10T20:43:27.000-07:00"],
+    ["1969-12-31T23:59:59Z", -1, "1969-12-31T23:59:59.999Z"],
+  ]) {
+    const record = {
+      record_id: "old", collector: "検証", facility: "kahaku", sensor_number: 1, direction: "B",
+      timestamp, timestamp_ms: timestampMs, devices: [{name:"phone", type:"smartphone"}],
+    };
+    assert.equal(core.recordsToCsv([record]).split("\n")[1],
+      "old,検証,phone,smartphone," + expected + ",kahaku,1,B");
+    assert.equal(record.timestamp, timestamp);
+  }
 });
 
 test("未登録の施設・範囲外センサ・A/B以外・空の記録者やデバイスを拒否する", () => {
